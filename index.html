@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Barebones Voice Typing</title>
+    <style>
+        body { font-family: sans-serif; }
+        textarea { width: 90%; height: 200px; margin-top: 10px; }
+        button { padding: 10px; margin-top: 10px; }
+        #status { margin-top: 10px; font-style: italic; color: grey; }
+    </style>
+</head>
+<body>
+
+    <h1>Voice Typing Demo</h1>
+    <p>Click the button and start speaking.</p>
+
+    <button id="startButton">Start Listening</button>
+    <textarea id="output" placeholder="Spoken text will appear here..."></textarea>
+    <div id="status">Status: Idle</div>
+
+    <script src="script.js"></script>
+</body>
+</html>
