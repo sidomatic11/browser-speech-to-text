@@ -1,23 +1,40 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Barebones Voice Typing</title>
-    <style>
-        body { font-family: sans-serif; }
-        textarea { width: 90%; height: 200px; margin-top: 10px; }
-        button { padding: 10px; margin-top: 10px; }
-        #status { margin-top: 10px; font-style: italic; color: grey; }
-    </style>
+    <link rel="stylesheet" href="stylesheet.css">
 </head>
+
 <body>
+    <main>
+        <h1>Voice Typing Demo</h1>
 
-    <h1>Voice Typing Demo</h1>
-    <p>Click the button and start speaking.</p>
+        <div id="container">
+            <span>hello</span><span> </span><span>world</span><span id="last-span"></span>
+        </div>
 
-    <button id="startButton">Start Listening</button>
-    <textarea id="output" placeholder="Spoken text will appear here..."></textarea>
-    <div id="status">Status: Idle</div>
+        <br>
+        <br>
+        <br>
+        <br>
+        <br>
+        <br>
+        <hr>
+        <br>
 
+        <div id="stt-container">
+            <h3>STT Input</h3>
+            <div id="status">Status: Idle</div>
+            <textarea id="output" placeholder="Spoken text will appear here..."></textarea>
+        </div>
+
+        <!-- <div id="text-input-container">
+            <h3>Text Input</h3>
+            <input id="text-input" type="text">
+        </div> -->
+    </main>
     <script src="script.js"></script>
 </body>
+
 </html>
