@@ -187,26 +187,38 @@ function splitByWords(text, anchorSpan) {
       currentSpan = span;
     }
   });
+
+  // Return the very last created span (can be whitespace)
+  return currentSpan;
 }
 
 function insertTextAtSelection(text) {
   if (!appState.selectedSpan) return;
 
   const lastSpan = domRefs.lastSpan;
+  let spanToSelectAfterInsert = null;
+
   if (appState.selectedSpan === lastSpan) {
     const newSpan = document.createElement('span');
     newSpan.textContent = ' ';
     newSpan.setAttribute('role', 'option');
     lastSpan.insertAdjacentElement('beforebegin', newSpan);
-    splitByWords(text, newSpan);
+    spanToSelectAfterInsert = splitByWords(text, newSpan);
   } else {
-    splitByWords(text, appState.selectedSpan);
+    spanToSelectAfterInsert = splitByWords(text, appState.selectedSpan);
   }
 
-  // Preserve previous behavior: deselect after insertion
-  appState.selectedSpan.classList.remove(CLASS_SELECTED);
-  setAriaSelected(appState.selectedSpan, false);
-  appState.selectedSpan = null;
+  // New behavior: select the next span after the inserted content
+  if (spanToSelectAfterInsert && spanToSelectAfterInsert.tagName === 'SPAN') {
+    const nextSpan = spanToSelectAfterInsert.nextElementSibling;
+    if (nextSpan && nextSpan.tagName === 'SPAN') {
+      selectSpan(nextSpan);
+    } else {
+      // Fallback to last inserted span if there is no next span
+      selectSpan(spanToSelectAfterInsert);
+    }
+    scrollSelectedIntoView();
+  }
 }
 
 // ---- Keyboard Handling ----
