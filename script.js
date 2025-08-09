@@ -1,28 +1,113 @@
-// Get all span elements
-const spans = document.getElementsByTagName("span");
+// script.js
+// Purpose: Voice typing demo that inserts recognized text into a span-based tokenized line.
+// Usage: Open index.html in a browser with Web Speech API support (Chrome/Edge).
+// Dependencies: Web Speech API; HTML with #container, #status, #output, and a sentinel span #last-span.
+// Notes:
+// - Arrow keys move selection; Enter toggles speech; Delete/Backspace removes selected span (except sentinel).
+// - We keep behavior consistent with previous version while organizing code into clearer sections.
 
-let selectedSpan = null;
-let recognition = null;
-let isRecognizing = false;
+// ---- Config / Constants ----
+const CLASS_SELECTED = 'selected';
+const CLASS_FLASH = 'boundary-flash';
+const SPEECH_LANGUAGE = 'en-US';
+const DEBUG_LOGGING_ENABLED = true;
 
-// Check for browser support
-window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+// ---- State ----
+const appState = {
+  selectedSpan: null,
+  isRecognizing: false,
+  recognition: null,
+};
 
-if (!window.SpeechRecognition) {
-  alert("Sorry, your browser doesn't support the Web Speech API. Try Chrome or Edge.");
-} else {
-  recognition = new SpeechRecognition();
-  const output = document.getElementById('output');
-  const statusDiv = document.getElementById('status');
+// ---- DOM ----
+const domRefs = {
+  container: document.getElementById('container'),
+  status: document.getElementById('status'),
+  output: document.getElementById('output'),
+  lastSpan: document.getElementById('last-span'),
+};
 
-  // --- Configuration ---
-  recognition.continuous = false; // Keep listening even after pauses
-  recognition.interimResults = false; // Show results as they come in
-  recognition.lang = 'en-US'; // Set language (adjust as needed)
+// ---- Utilities ----
+function debugLog(...args) {
+  if (DEBUG_LOGGING_ENABLED) console.log(...args);
+}
 
-  // --- Event Handlers ---
+function updateStatus(text) {
+  // Central place to update status UI so all flows stay consistent
+  domRefs.status.textContent = `Status: ${text}`;
+}
 
-  // Fired when a result is received
+function setAriaSelected(span, isSelected) {
+  if (!span) return;
+  span.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+}
+
+function selectSpan(span) {
+  if (!span || span.tagName !== 'SPAN') return;
+
+  if (appState.selectedSpan) {
+    appState.selectedSpan.classList.remove(CLASS_SELECTED);
+    setAriaSelected(appState.selectedSpan, false);
+  }
+
+  appState.selectedSpan = span;
+  appState.selectedSpan.classList.add(CLASS_SELECTED);
+  setAriaSelected(appState.selectedSpan, true);
+}
+
+function scrollSelectedIntoView() {
+  if (!appState.selectedSpan) return;
+  appState.selectedSpan.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function flashBoundaryOnSelected() {
+  if (!appState.selectedSpan) return;
+  appState.selectedSpan.classList.add(CLASS_FLASH);
+  setTimeout(() => {
+    appState.selectedSpan.classList.remove(CLASS_FLASH);
+  }, 200);
+}
+
+// ---- Speech Recognition ----
+function initRecognition() {
+  // Check for browser support early to avoid wiring unusable handlers.
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognitionCtor) {
+    alert("Sorry, your browser doesn't support the Web Speech API. Try Chrome or Edge.");
+    return;
+  }
+
+  const recognition = new SpeechRecognitionCtor();
+  appState.recognition = recognition;
+
+  // Configuration: keep these aligned with comments to avoid confusion.
+  // We only want final results in this demo; no interim streaming.
+  recognition.interimResults = false; // Only final results
+  // We want a single utterance per activation; not continuous.
+  recognition.continuous = false; // Stop automatically after a pause
+  recognition.lang = SPEECH_LANGUAGE;
+
+  recognition.onstart = () => {
+    appState.isRecognizing = true;
+    updateStatus('Listening...');
+    debugLog('Speech recognition started');
+  };
+
+  recognition.onend = () => {
+    appState.isRecognizing = false;
+    updateStatus('Idle');
+    debugLog('Speech recognition ended');
+  };
+
+  recognition.onerror = (event) => {
+    updateStatus(`Error - ${event.error}`);
+    console.error('Speech recognition error:', event.error, event.message);
+    // Ensure recognition stops if an error occurs to keep UI/state consistent
+    if (appState.isRecognizing) {
+      try { recognition.stop(); } catch (_) { }
+    }
+  };
+
   recognition.onresult = (event) => {
     let interimTranscript = '';
     let finalTranscript = '';
@@ -34,211 +119,183 @@ if (!window.SpeechRecognition) {
         interimTranscript += event.results[i][0].transcript;
       }
     }
-    // Update the textarea with the final transcript, appending new results
-    // You could also display interim results separately if desired
-    output.value += finalTranscript;
 
-    updateText(finalTranscript);
+    // Mirror previous behavior: append to the textarea and insert into spans
+    domRefs.output.value += finalTranscript;
+    insertTextAtSelection(finalTranscript);
 
-    console.log('Interim:', interimTranscript); // Log interim results
-    console.log('Final:', finalTranscript);     // Log final results
-    console.log('Full Event:', event);          // Log the whole event for inspection
-  };
-
-  // Fired when recognition starts
-  recognition.onstart = () => {
-    isRecognizing = true;
-    statusDiv.textContent = 'Status: Listening...';
-    console.log('Speech recognition started');
-  };
-
-  // Fired when recognition ends (manually stopped, or timeout/error)
-  recognition.onend = () => {
-    isRecognizing = false;
-    statusDiv.textContent = 'Status: Idle';
-    console.log('Speech recognition ended');
-  };
-
-  // Fired on error
-  recognition.onerror = (event) => {
-    statusDiv.textContent = `Status: Error - ${event.error}`;
-    console.error('Speech recognition error:', event.error, event.message);
-    // Ensure recognition stops if an error occurs
-    if (isRecognizing) {
-      recognition.stop(); // This will trigger onend
-    }
+    debugLog('Interim:', interimTranscript);
+    debugLog('Final:', finalTranscript);
+    debugLog('Full Event:', event);
   };
 }
 
-// Function to start/stop speech recognition
-function toggleSpeechRecognition() {
-  if (recognition) {
-    if (isRecognizing) {
-      recognition.stop(); // This will trigger the 'onend' event
-    } else {
-      try {
-        recognition.start();
-        // The 'onstart' event will update the state and UI
-      } catch (e) {
-        // Handle cases where start() might fail immediately (rare)
-        console.error("Error starting recognition:", e);
-        const statusDiv = document.getElementById('status');
-        statusDiv.textContent = 'Status: Error starting - check permissions?';
-        isRecognizing = false; // Reset state
-      }
-    }
+function startRecognition() {
+  if (!appState.recognition) return;
+  try {
+    appState.recognition.start();
+  } catch (e) {
+    console.error('Error starting recognition:', e);
+    updateStatus('Error starting - check permissions?');
+    appState.isRecognizing = false;
   }
 }
 
-function onSpanClick() {
-  // Handle span selection
-  if (selectedSpan) {
-    selectedSpan.classList.remove("selected");
-  }
-  this.classList.add("selected");
-  selectedSpan = this;
-
-  // Toggle speech recognition
-  toggleSpeechRecognition();
+function stopRecognition() {
+  if (!appState.recognition) return;
+  try {
+    appState.recognition.stop();
+  } catch (_) { }
 }
 
-// Loop through each span and add click handler
-for (let span of spans) {
-  span.onclick = onSpanClick;
+function toggleRecognition() {
+  if (!appState.recognition) return;
+  if (appState.isRecognizing) stopRecognition();
+  else startRecognition();
 }
 
-// Add click handler to last span
-const lastSpan = document.getElementById('last-span');
-selectedSpan = lastSpan;
-lastSpan.classList.add("selected");
-
-// Add keyboard navigation
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-    event.preventDefault(); // Prevent default scrolling behavior
-
-    if (!selectedSpan) return;
-
-    let nextSpan;
-    let isAtBoundary = false;
-
-    if (event.key === 'ArrowLeft') {
-      // Move to previous span
-      nextSpan = selectedSpan.previousElementSibling;
-      // Check if we're at the first span
-      if (!nextSpan || nextSpan.tagName !== 'SPAN') {
-        isAtBoundary = true;
-      }
-    } else {
-      // Move to next span
-      nextSpan = selectedSpan.nextElementSibling;
-      // Check if we're at the last span
-      if (!nextSpan || nextSpan.tagName !== 'SPAN') {
-        isAtBoundary = true;
-      }
-    }
-
-    // Select the new span if it exists and is a span
-    if (nextSpan && nextSpan.tagName === 'SPAN') {
-      selectedSpan.classList.remove("selected");
-      selectedSpan = nextSpan;
-      selectedSpan.classList.add("selected");
-
-      // Scroll the selected span into view if needed
-      selectedSpan.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    } else if (isAtBoundary) {
-      // Optional: Provide visual feedback when at boundary
-      // For example, briefly highlight the current span to indicate it's at the boundary
-      selectedSpan.classList.add("boundary-flash");
-      setTimeout(() => {
-        selectedSpan.classList.remove("boundary-flash");
-      }, 200);
-
-      // Log to console for debugging
-      console.log(`At ${event.key === 'ArrowLeft' ? 'first' : 'last'} span boundary`);
-    }
-  } else if (event.key === 'Enter' && selectedSpan) {
-    // Start/stop speech recognition when Enter is pressed
-    event.preventDefault(); // Prevent default form submission
-    toggleSpeechRecognition();
-  } else if ((event.key === 'Delete' || event.key === 'Backspace') && selectedSpan) {
-    // Delete the selected span and select the previous one
-    event.preventDefault(); // Prevent default backspace behavior
-
-    // Don't delete the last span
-    const lastSpan = document.getElementById('last-span');
-    if (selectedSpan === lastSpan) {
-      // Visual feedback that we can't delete the last span
-      selectedSpan.classList.add("boundary-flash");
-      setTimeout(() => {
-        selectedSpan.classList.remove("boundary-flash");
-      }, 200);
-      return;
-    }
-
-    // Get the previous span before deleting the current one
-    const previousSpan = selectedSpan.previousElementSibling;
-
-    // Remove the selected span
-    selectedSpan.remove();
-
-    // Select the previous span if it exists and is a span
-    if (previousSpan && previousSpan.tagName === 'SPAN') {
-      selectedSpan = previousSpan;
-      selectedSpan.classList.add("selected");
-
-      // Scroll the selected span into view if needed
-      selectedSpan.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }
-});
-
-function splitByWords(text, element) {
+// ---- Text Insertion ----
+function splitByWords(text, anchorSpan) {
+  // Split into words and whitespace to retain spacing; this keeps visual fidelity.
   const parts = text.match(/\S+|\s+/g) || [];
-  let currentSpan = element;
 
-  // If currentSpan only contains a space, add two spans with spaces before and after
-  if (currentSpan.textContent === " ") {
-    const beforeSpan = document.createElement("span");
-    beforeSpan.textContent = " ";
-    beforeSpan.onclick = onSpanClick;
-    currentSpan.insertAdjacentElement("beforebegin", beforeSpan);
+  // Special-case: if anchorSpan is a single space, ensure there are spaces on both sides.
+  // This mirrors earlier behavior where we added before/after spaces to keep padding around inserts.
+  if (anchorSpan.textContent === ' ') {
+    const beforeSpan = document.createElement('span');
+    beforeSpan.textContent = ' ';
+    beforeSpan.setAttribute('role', 'option');
+    anchorSpan.insertAdjacentElement('beforebegin', beforeSpan);
 
-    const afterSpan = document.createElement("span");
-    afterSpan.textContent = " ";
-    afterSpan.onclick = onSpanClick;
-    currentSpan.insertAdjacentElement("afterend", afterSpan);
+    const afterSpan = document.createElement('span');
+    afterSpan.textContent = ' ';
+    afterSpan.setAttribute('role', 'option');
+    anchorSpan.insertAdjacentElement('afterend', afterSpan);
   }
 
+  // Build spans incrementally to reduce layout thrash
+  let currentSpan = anchorSpan;
   parts.forEach((part, index) => {
     if (index === 0) {
       currentSpan.textContent = part;
+      currentSpan.setAttribute('role', 'option');
     } else {
-      const span = document.createElement("span");
+      const span = document.createElement('span');
       span.textContent = part;
-      span.onclick = onSpanClick;
-      currentSpan.insertAdjacentElement("afterend", span);
+      span.setAttribute('role', 'option');
+      currentSpan.insertAdjacentElement('afterend', span);
       currentSpan = span;
     }
   });
 }
 
-function updateText(text) {
-  if (selectedSpan) {
-    const lastSpan = document.getElementById("last-span");
-    if (selectedSpan === lastSpan) {
-      const newSpan = document.createElement("span");
-      newSpan.textContent = " ";
-      newSpan.onclick = onSpanClick;
-      lastSpan.insertAdjacentElement("beforebegin", newSpan);
-      splitByWords(text, newSpan);
-    } else {
-      splitByWords(text, selectedSpan);
-    }
-    selectedSpan.classList.remove("selected");
-    selectedSpan = null;
+function insertTextAtSelection(text) {
+  if (!appState.selectedSpan) return;
+
+  const lastSpan = domRefs.lastSpan;
+  if (appState.selectedSpan === lastSpan) {
+    const newSpan = document.createElement('span');
+    newSpan.textContent = ' ';
+    newSpan.setAttribute('role', 'option');
+    lastSpan.insertAdjacentElement('beforebegin', newSpan);
+    splitByWords(text, newSpan);
+  } else {
+    splitByWords(text, appState.selectedSpan);
+  }
+
+  // Preserve previous behavior: deselect after insertion
+  appState.selectedSpan.classList.remove(CLASS_SELECTED);
+  setAriaSelected(appState.selectedSpan, false);
+  appState.selectedSpan = null;
+}
+
+// ---- Keyboard Handling ----
+function handleArrowKey(direction) {
+  if (!appState.selectedSpan) return;
+
+  let nextSpan = null;
+  let isAtBoundary = false;
+
+  if (direction === 'ArrowLeft') {
+    nextSpan = appState.selectedSpan.previousElementSibling;
+    if (!nextSpan || nextSpan.tagName !== 'SPAN') isAtBoundary = true;
+  } else {
+    nextSpan = appState.selectedSpan.nextElementSibling;
+    if (!nextSpan || nextSpan.tagName !== 'SPAN') isAtBoundary = true;
+  }
+
+  if (nextSpan && nextSpan.tagName === 'SPAN') {
+    selectSpan(nextSpan);
+    scrollSelectedIntoView();
+  } else if (isAtBoundary) {
+    // Provide subtle feedback that we can't move further
+    flashBoundaryOnSelected();
+    debugLog(`At ${direction === 'ArrowLeft' ? 'first' : 'last'} span boundary`);
   }
 }
+
+function handleDeleteBackspace() {
+  if (!appState.selectedSpan) return;
+
+  const lastSpan = domRefs.lastSpan;
+  if (appState.selectedSpan === lastSpan) {
+    // Can't delete sentinel; flash to indicate boundary
+    flashBoundaryOnSelected();
+    return;
+  }
+
+  const previousSpan = appState.selectedSpan.previousElementSibling;
+  appState.selectedSpan.remove();
+
+  if (previousSpan && previousSpan.tagName === 'SPAN') {
+    selectSpan(previousSpan);
+    scrollSelectedIntoView();
+  } else {
+    appState.selectedSpan = null;
+  }
+}
+
+// ---- Events & Initialization ----
+function initEvents() {
+  // Event delegation for spans so newly created spans automatically work.
+  domRefs.container.setAttribute('role', 'listbox');
+  domRefs.container.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target && target.tagName === 'SPAN') {
+      selectSpan(target);
+      toggleRecognition(); // preserve previous behavior where clicking a span toggles speech
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      handleArrowKey(event.key);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      if (!appState.selectedSpan) return;
+      event.preventDefault();
+      toggleRecognition();
+      return;
+    }
+
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (!appState.selectedSpan) return;
+      event.preventDefault();
+      handleDeleteBackspace();
+    }
+  });
+
+  // Initial selection defaults to the sentinel last span to match prior behavior
+  selectSpan(domRefs.lastSpan);
+}
+
+(function init() {
+  initRecognition();
+  initEvents();
+})();
 
 
 
